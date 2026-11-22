@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Cardápio</title>
+<style>
+  :root { --fundo: #f3f5f9; --texto: #0f172a; --suave: #55627a; --marca: #1d4ed8; --linha: #dde3ec; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --fundo: #0b1220; --texto: #e6ebf5; --suave: #9aa7bd; --marca: #6ea8ff; --linha: #26334d; } }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--fundo); color: var(--texto); font: 1rem/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; display: grid; place-items: center; padding: 24px; box-sizing: border-box; text-align: center; }
+  main { max-width: 420px; }
+  h1 { font-size: 1.35rem; margin: 0 0 8px; }
+  p { color: var(--suave); margin: 0 0 16px; }
+  .gira { width: 34px; height: 34px; margin: 0 auto 18px; border: 3px solid var(--linha); border-top-color: var(--marca); border-radius: 50%; animation: gira 0.9s linear infinite; }
+  @keyframes gira { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .gira { animation: none; } }
+  button { font: inherit; color: #fff; background: var(--marca); border: 0; border-radius: 10px; padding: 12px 20px; min-height: 44px; cursor: pointer; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <div id="abrindo">
+    <div class="gira" aria-hidden="true"></div>
+    <h1>Abrindo o cardápio…</h1>
+    <p>Só um instante.</p>
+  </div>
+  <div id="fora" hidden>
+    <h1>Voltamos já</h1>
+    <p>O cardápio está fora do ar neste momento. Esta página tenta de novo sozinha a cada 20 segundos.</p>
+    <button type="button" id="tentar">Tentar agora</button>
+  </div>
+  <noscript><p>Para abrir o cardápio, ative o JavaScript do navegador.</p></noscript>
+</main>
+<script>
+// Esta pagina tem o endereco fixo que vai no QR Code. O cardapio de verdade roda num aparelho cujo endereco
+// na internet muda de vez em quando; o endereco atual fica em destino.json, atualizado pelo proprio aparelho.
+const VALIDO = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/;
+const REPO = 'arthurmassimetti/cardapio';
+
+async function ler(url, tratar) {
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok) throw new Error('falha ' + r.status);
+  const destino = tratar(await r.json());
+  if (!VALIDO.test(destino)) throw new Error('endereco invalido');
+  return destino;
+}
+// Duas fontes do mesmo arquivo: a copia publicada (rapida) e o proprio repositorio (sempre a mais nova,
+// util no minuto em que o GitHub ainda esta republicando a pagina).
+const fontes = [
+  () => ler('destino.json?t=' + Date.now(), (j) => j.url),
+  () => ler('https://api.github.com/repos/' + REPO + '/contents/destino.json?t=' + Date.now(), (j) => JSON.parse(atob(j.content)).url),
+];
+
+async function noAr(destino) {
+  const limite = new AbortController();
+  const relogio = setTimeout(() => limite.abort(), 8000);
+  try {
+    const r = await fetch(destino + '/api/v1/saude', { cache: 'no-store', signal: limite.signal });
+    return r.ok;
+  } catch (e) {
+    return false;
+  } finally {
+    clearTimeout(relogio);
+  }
+}
+
+async function abrir() {
+  document.getElementById('fora').hidden = true;
+  document.getElementById('abrindo').hidden = false;
+  const tentados = new Set();
+  for (const fonte of fontes) {
+    let destino;
+    try { destino = await fonte(); } catch (e) { continue; }
+    if (tentados.has(destino)) continue;
+    tentados.add(destino);
+    if (await noAr(destino)) { location.replace(destino + '/cardapio'); return; }
+  }
+  document.getElementById('abrindo').hidden = true;
+  document.getElementById('fora').hidden = false;
+}
+
+document.getElementById('tentar').addEventListener('click', abrir);
+setInterval(() => { if (!document.getElementById('fora').hidden) abrir(); }, 20000);
+abrir();
+</script>
+</body>
+</html>
